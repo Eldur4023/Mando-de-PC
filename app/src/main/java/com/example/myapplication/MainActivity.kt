@@ -20,10 +20,13 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
+import android.content.SharedPreferences
 import android.view.View
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var prefs: SharedPreferences
 
     private lateinit var binding: ActivityMainBinding
     private var socket: Socket? = null
@@ -55,6 +58,12 @@ class MainActivity : AppCompatActivity() {
     private val DOUBLE_TAP_MS = 280L
     private var touchpadSensitivity = 3.5f
 
+    // Scroll con dos dedos
+    private var isScrollMode = false
+    private var scrollLastY = 0f
+    private var scrollAccum = 0f
+    private val SCROLL_THRESHOLD = 30f
+
     // Teclado en tiempo real
     private var sentText = ""
 
@@ -62,6 +71,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        prefs = getSharedPreferences("mando_prefs", MODE_PRIVATE)
+        touchpadSensitivity = prefs.getFloat("touchpad_sensitivity", 3.5f)
+
         setupUI()
     }
 
@@ -169,13 +182,17 @@ class MainActivity : AppCompatActivity() {
         touchpadSlider.addOnChangeListener { _, value, _ ->
             touchpadSensitivity = value
             touchpadValueTv.text = String.format("%.1f", value)
+            prefs.edit().putFloat("touchpad_sensitivity", value).apply()
         }
 
         sheet.show()
     }
 
+    // El scroll se intercepta en dispatchTouchEvent antes de llegar a las vistas.
+    // handleTap solo maneja gestos de un dedo.
     private fun handleTap(event: MotionEvent) {
-        when (event.action) {
+        if (isScrollMode) return
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
                 lastTouchY = event.y
@@ -184,9 +201,7 @@ class MainActivity : AppCompatActivity() {
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
-
                 if (abs(dx) + abs(dy) > TAP_MOVEMENT_THRESHOLD) touchMoved = true
-
                 if (isMoving && touchMoved) {
                     val fx = dx * touchpadSensitivity + touchRemDx
                     val fy = dy * touchpadSensitivity + touchRemDy
@@ -194,11 +209,10 @@ class MainActivity : AppCompatActivity() {
                     accumDx.addAndGet(ix); accumDy.addAndGet(iy)
                     touchRemDx = fx - ix;  touchRemDy = fy - iy
                 }
-
                 lastTouchX = event.x
                 lastTouchY = event.y
             }
-            MotionEvent.ACTION_UP -> {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (!touchMoved) {
                     val now = System.currentTimeMillis()
                     if (now - lastTapTime < DOUBLE_TAP_MS) {
@@ -215,6 +229,52 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (isConnected) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (ev.pointerCount == 2) {
+                        isScrollMode = true
+                        scrollAccum = 0f
+                        // Registrar Y del puntero recién añadido
+                        scrollLastY = ev.getY(ev.actionIndex)
+                        // Cancelar tap pendiente
+                        pendingSingleTap?.let { tapHandler.removeCallbacks(it) }
+                        pendingSingleTap = null
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (isScrollMode && ev.pointerCount >= 2) {
+                        val y = ev.getY(ev.actionIndex.coerceAtMost(ev.pointerCount - 1))
+                        val dy = y - scrollLastY
+                        scrollLastY = y
+                        scrollAccum += dy
+                        while (scrollAccum >= SCROLL_THRESHOLD) {
+                            sendCommand("SCROLL -1\n")
+                            scrollAccum -= SCROLL_THRESHOLD
+                        }
+                        while (scrollAccum <= -SCROLL_THRESHOLD) {
+                            sendCommand("SCROLL 1\n")
+                            scrollAccum += SCROLL_THRESHOLD
+                        }
+                        return true // consumir: las vistas no ven el MOVE multitáctil
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    if (isScrollMode) {
+                        isScrollMode = false
+                        scrollAccum = 0f
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    isScrollMode = false
+                    scrollAccum = 0f
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     // ── Conexión ──────────────────────────────────────────────────────────────

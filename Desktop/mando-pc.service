@@ -1,0 +1,22 @@
+[Unit]
+Description=Mando de PC - Servidor de control remoto
+Documentation=https://github.com
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/AndroidStudioProjects/MyApplication/Desktop/screen_server_full
+Restart=on-failure
+RestartSec=5
+
+# Acceso al display X11
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+
+# Salida al journal (ver con: journalctl --user -u mando-pc -f)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

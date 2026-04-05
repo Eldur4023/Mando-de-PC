@@ -3,6 +3,7 @@
 #include <X11/extensions/XTest.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
@@ -99,18 +100,20 @@ bool send_frame(int client_sock, const std::vector<unsigned char>& jpeg_data) {
     return true;
 }
 
-// Simular tecla usando XTest
-void simulate_key(Display* display, char key) {
-    char key_str[2] = {key, '\0'};  // null-terminated
-    KeySym keysym = XStringToKeysym(key_str);
+// Simular tecla usando XTest (acepta nombre de keysym X11 como "BackSpace", "space", "Return", etc.)
+void simulate_keyname(Display* display, const char* name) {
+    KeySym keysym = XStringToKeysym(name);
     if (keysym == NoSymbol) return;
-
     KeyCode keycode = XKeysymToKeycode(display, keysym);
     if (keycode == 0) return;
-
-    XTestFakeKeyEvent(display, keycode, True, 0);  // Press
-    XTestFakeKeyEvent(display, keycode, False, 0); // Release
+    XTestFakeKeyEvent(display, keycode, True, 0);
+    XTestFakeKeyEvent(display, keycode, False, 0);
     XFlush(display);
+}
+
+void simulate_key(Display* display, char key) {
+    char key_str[2] = {key, '\0'};
+    simulate_keyname(display, key_str);
 }
 
 // Procesar un único comando
@@ -131,11 +134,13 @@ void process_command(ClientContext* ctx, const char* cmd) {
         }
     } else if (strncmp(cmd, "KEY", 3) == 0) {
         char key[64];
-        if (sscanf(cmd, "KEY %s", key) == 1) {
-            for (int i = 0; key[i]; i++) {
-                simulate_key(ctx->display, key[i]);
+        if (sscanf(cmd, "KEY %63s", key) == 1) {
+            if (strlen(key) > 1) {
+                // Nombre de keysym X11 (p.ej. "BackSpace", "space", "Return")
+                simulate_keyname(ctx->display, key);
+            } else {
+                simulate_key(ctx->display, key[0]);
             }
-            printf("Key pressed: %s\n", key);
         }
     } else if (strncmp(cmd, "SCROLL", 6) == 0) {
         int direction;
@@ -314,7 +319,11 @@ int main() {
         }
 
         printf("Client connected from %s\n", inet_ntoa(client_addr.sin_addr));
-        
+
+        // Deshabilitar Nagle: envío inmediato de paquetes pequeños (menos latencia)
+        int nodelay = 1;
+        setsockopt(client_sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+
         // Enviar dimensiones de pantalla al cliente
         uint32_t dims[2] = {(uint32_t)width, (uint32_t)height};
         send(client_sock, dims, sizeof(dims), 0);

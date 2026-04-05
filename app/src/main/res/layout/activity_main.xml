@@ -4,7 +4,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background">
+    android:background="@color/background"
+    android:fitsSystemWindows="true">
 
     <!-- ── PANTALLA DE CONEXIÓN ───────────────────────────────────────────── -->
     <com.google.android.material.card.MaterialCardView
@@ -98,6 +99,25 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <!-- Barra superior con engranaje -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:paddingEnd="8dp"
+            android:paddingTop="8dp">
+
+            <ImageButton
+                android:id="@+id/settingsBtn"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_settings"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="12dp"
+                android:contentDescription="Configuración"/>
+        </LinearLayout>
+
         <!-- Zona táctil superior (tap / doble tap para clicks) -->
         <View
             android:id="@+id/touchArea"
@@ -121,7 +141,7 @@
             android:id="@+id/instructionText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Mantén pulsado y mueve el móvil"
+            android:text="Mantén pulsado y desliza para mover"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:layout_marginTop="12dp"/>
@@ -132,12 +152,12 @@
             android:layout_height="0dp"
             android:layout_weight="1"/>
 
-        <!-- Teclado -->
+        <!-- Teclado en tiempo real -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/keyboardInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Escribe y pulsa Enter"
+            android:hint="Teclado en tiempo real"
             app:boxCornerRadiusTopStart="12dp"
             app:boxCornerRadiusTopEnd="12dp"
             app:boxCornerRadiusBottomStart="12dp"
@@ -147,49 +167,16 @@
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="28dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/keyboardInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="text"
-                android:imeOptions="actionSend"
+                android:imeOptions="actionNone"
                 android:textColor="@color/text_primary"/>
         </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- Botones click -->
-        <LinearLayout
-            android:id="@+id/clickButtons"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="28dp">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/leftClickBtn"
-                android:layout_width="0dp"
-                android:layout_height="64dp"
-                android:layout_weight="1"
-                android:text="Click Izq"
-                android:textSize="15sp"
-                app:backgroundTint="@color/left_click"
-                app:cornerRadius="16dp"
-                android:layout_marginEnd="8dp"/>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/rightClickBtn"
-                android:layout_width="0dp"
-                android:layout_height="64dp"
-                android:layout_weight="1"
-                android:text="Click Der"
-                android:textSize="15sp"
-                app:backgroundTint="@color/right_click"
-                app:cornerRadius="16dp"
-                android:layout_marginStart="8dp"/>
-        </LinearLayout>
 
     </LinearLayout>
 

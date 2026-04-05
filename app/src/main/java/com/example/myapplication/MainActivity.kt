@@ -1,18 +1,18 @@
 package com.example.myapplication
 
-import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.myapplication.databinding.ActivityMainBinding
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.slider.Slider
+import android.widget.TextView
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -20,12 +20,10 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
-import android.graphics.BitmapFactory
 import android.view.View
-import android.view.inputmethod.EditorInfo
 import kotlin.math.abs
 
-class MainActivity : AppCompatActivity(), SensorEventListener {
+class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var socket: Socket? = null
@@ -35,23 +33,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var isConnected = false
     private val sendMutex = Mutex()
 
-    // Sensor de gravedad (inclinación)
-    private lateinit var sensorManager: SensorManager
-    private var gravitySensor: Sensor? = null
+    // Estado del botón Mover
     private var isMoving = false
-    private val sensitivity = 2000f
-    private val deadzone = 0.003f
-    private var prevAzimuth = 0f
-    private var prevPitch = 0f
-    private var hasPrev = false
 
-    // Acumuladores thread-safe: el sensor acumula, el sender envía a 70 Hz
+    // Acumuladores thread-safe para movimiento del touchpad
     private val accumDx = AtomicInteger(0)
     private val accumDy = AtomicInteger(0)
-    // Suavizado EMA para eliminar ruido del sensor
-    private var smoothDx = 0f
-    private var smoothDy = 0f
-    private val emaAlpha = 0.45f   // 0 = sin suavizado, 1 = máximo suavizado
+    // Restos sub-píxel (hilo principal)
+    private var touchRemDx = 0f
+    private var touchRemDy = 0f
     private var mouseSenderJob: Job? = null
 
     // Tap / doble tap
@@ -63,17 +53,15 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var lastTouchY = 0f
     private val TAP_MOVEMENT_THRESHOLD = 15f
     private val DOUBLE_TAP_MS = 280L
-    private val touchpadSensitivity = 3.5f
+    private var touchpadSensitivity = 3.5f
+
+    // Teclado en tiempo real
+    private var sentText = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        // TYPE_GRAVITY = acelerómetro filtrado (solo inclinación, sin sacudidas)
-        gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-
         setupUI()
     }
 
@@ -84,17 +72,44 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             else Toast.makeText(this, "Introduce una IP válida", Toast.LENGTH_SHORT).show()
         }
 
+        // ── Botón MOVER ──────────────────────────────────────────────────────
         var moveBtnPressTime = 0L
+        var moveBtnStartX = 0f
+        var moveBtnStartY = 0f
+        var moveBtnLastX = 0f
+        var moveBtnLastY = 0f
+        var moveBtnDragged = false
         val TAP_MAX_MS = 200L
+        val TAP_MOVE_THRESHOLD = 12f
         binding.calibrateBtn.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     isMoving = true
                     moveBtnPressTime = System.currentTimeMillis()
+                    moveBtnStartX = event.x
+                    moveBtnStartY = event.y
+                    moveBtnLastX = event.x
+                    moveBtnLastY = event.y
+                    moveBtnDragged = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - moveBtnLastX
+                    val dy = event.y - moveBtnLastY
+                    val totalMoved = abs(event.x - moveBtnStartX) + abs(event.y - moveBtnStartY)
+                    if (totalMoved > TAP_MOVE_THRESHOLD) moveBtnDragged = true
+                    if (moveBtnDragged) {
+                        val fx = dx * touchpadSensitivity + touchRemDx
+                        val fy = dy * touchpadSensitivity + touchRemDy
+                        val ix = fx.toInt(); val iy = fy.toInt()
+                        accumDx.addAndGet(ix); accumDy.addAndGet(iy)
+                        touchRemDx = fx - ix;  touchRemDy = fy - iy
+                    }
+                    moveBtnLastX = event.x
+                    moveBtnLastY = event.y
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     isMoving = false
-                    if (System.currentTimeMillis() - moveBtnPressTime < TAP_MAX_MS) {
+                    if (!moveBtnDragged && System.currentTimeMillis() - moveBtnPressTime < TAP_MAX_MS) {
                         sendClick(1)
                     }
                 }
@@ -102,25 +117,61 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             true
         }
 
-        binding.leftClickBtn.setOnClickListener { sendClick(1) }
-        binding.rightClickBtn.setOnClickListener { sendClick(3) }
-
-        binding.keyboardInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
-                val text = binding.keyboardInput.text.toString()
-                if (text.isNotEmpty()) {
-                    sendKeyPress(text)
-                    binding.keyboardInput.text?.clear()
+        // ── Teclado en tiempo real ───────────────────────────────────────────
+        binding.keyboardInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(editable: Editable?) {
+                if (!isConnected) return
+                val newText = editable?.toString() ?: ""
+                if (newText.length > sentText.length) {
+                    val added = newText.substring(sentText.length)
+                    for (c in added) {
+                        when (c) {
+                            ' '  -> sendCommand("KEY space\n")
+                            '\n' -> sendCommand("KEY Return\n")
+                            else -> sendCommand("KEY $c\n")
+                        }
+                    }
+                } else if (newText.length < sentText.length) {
+                    repeat(sentText.length - newText.length) {
+                        sendCommand("KEY BackSpace\n")
+                    }
                 }
-                true
-            } else false
-        }
+                sentText = newText
+            }
+        })
 
+        // ── Área táctil (tap = click izq, doble tap = click der) ────────────
         binding.touchArea.setOnTouchListener { _, event ->
             if (!isConnected) return@setOnTouchListener false
             handleTap(event)
             true
         }
+
+        // ── Engranaje de configuración ────────────────────────────────────────
+        binding.settingsBtn.setOnClickListener {
+            showSettingsSheet()
+        }
+    }
+
+    private fun showSettingsSheet() {
+        val sheet = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_settings, null)
+        sheet.setContentView(view)
+
+        val touchpadSlider = view.findViewById<Slider>(R.id.touchpadSlider)
+        val touchpadValueTv = view.findViewById<TextView>(R.id.touchpadValue)
+
+        touchpadSlider.value = touchpadSensitivity.coerceIn(0.5f, 10.0f)
+        touchpadValueTv.text = String.format("%.1f", touchpadSensitivity)
+
+        touchpadSlider.addOnChangeListener { _, value, _ ->
+            touchpadSensitivity = value
+            touchpadValueTv.text = String.format("%.1f", value)
+        }
+
+        sheet.show()
     }
 
     private fun handleTap(event: MotionEvent) {
@@ -136,10 +187,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
                 if (abs(dx) + abs(dy) > TAP_MOVEMENT_THRESHOLD) touchMoved = true
 
-                // Touchpad: acumula el delta del dedo mientras Mover está pulsado
                 if (isMoving && touchMoved) {
-                    accumDx.addAndGet((dx * touchpadSensitivity).toInt())
-                    accumDy.addAndGet((dy * touchpadSensitivity).toInt())
+                    val fx = dx * touchpadSensitivity + touchRemDx
+                    val fy = dy * touchpadSensitivity + touchRemDy
+                    val ix = fx.toInt(); val iy = fy.toInt()
+                    accumDx.addAndGet(ix); accumDy.addAndGet(iy)
+                    touchRemDx = fx - ix;  touchRemDy = fy - iy
                 }
 
                 lastTouchX = event.x
@@ -164,55 +217,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // ── Sensor ────────────────────────────────────────────────────────────────
-
-    override fun onSensorChanged(event: SensorEvent) {
-        if (!isConnected) return
-
-        // values[0] = X: inclinación izq(-) / der(+)
-        // values[2] = Z: inclinación atrás(-) / adelante(+)
-        val x = event.values[0]
-        val z = event.values[2]
-
-        val rotMatrix = FloatArray(9)
-        SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
-        val orientation = FloatArray(3)
-        SensorManager.getOrientation(rotMatrix, orientation)
-
-        val azimuth = orientation[0]  // izq/der
-        val pitch   = orientation[1]  // arriba/abajo
-
-        if (!isMoving || !hasPrev) {
-            prevAzimuth = azimuth
-            prevPitch   = pitch
-            hasPrev     = true
-            return
-        }
-
-        var dAzimuth = azimuth - prevAzimuth
-        var dPitch   = pitch   - prevPitch
-
-        // Corregir salto de -π a +π
-        if (dAzimuth >  Math.PI) dAzimuth -= (2 * Math.PI).toFloat()
-        if (dAzimuth < -Math.PI) dAzimuth += (2 * Math.PI).toFloat()
-
-        prevAzimuth = azimuth
-        prevPitch   = pitch
-
-        val rawDx = if (abs(dAzimuth) > deadzone) dAzimuth * sensitivity else 0f
-        val rawDy = if (abs(dPitch)   > deadzone) dPitch   * sensitivity else 0f
-
-        // EMA: suaviza picos bruscos del sensor
-        smoothDx = smoothDx * emaAlpha + rawDx * (1f - emaAlpha)
-        smoothDy = smoothDy * emaAlpha + rawDy * (1f - emaAlpha)
-
-        // Acumular para que el sender los recoja en el próximo ciclo
-        accumDx.addAndGet(smoothDx.toInt())
-        accumDy.addAndGet(smoothDy.toInt())
-    }
-
-    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
-
     // ── Conexión ──────────────────────────────────────────────────────────────
 
     private fun connectToServer(ip: String) {
@@ -220,11 +224,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                socket = Socket(ip, 5555)
+                socket = Socket(ip, 5555).also { it.tcpNoDelay = true }
                 inputStream = DataInputStream(socket!!.getInputStream())
                 outputStream = DataOutputStream(socket!!.getOutputStream())
 
-                // Leer y descartar dimensiones de pantalla (el servidor las envía siempre)
                 inputStream!!.readInt()
                 inputStream!!.readInt()
 
@@ -232,12 +235,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                     isConnected = true
                     binding.connectionBar.visibility = View.GONE
                     binding.connectedLayout.visibility = View.VISIBLE
-
-                    // Iniciar sensor
-                    gravitySensor?.let {
-                        sensorManager.registerListener(this@MainActivity, it, SensorManager.SENSOR_DELAY_GAME)
-                    }
-
                     Toast.makeText(this@MainActivity, "Conectado", Toast.LENGTH_SHORT).show()
                 }
 
@@ -254,7 +251,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    // Envía los deltas acumulados a ~70 Hz, usando el mutex para no mezclar con clicks
     private fun startMouseSender() {
         mouseSenderJob = lifecycleScope.launch(Dispatchers.IO) {
             while (isActive && isConnected) {
@@ -268,12 +264,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
                         } catch (_: Exception) { return@launch }
                     }
                 }
-                delay(14) // ~70 Hz
+                delay(8) // ~120 Hz
             }
         }
     }
 
-    // Lee y descarta los frames que envía el servidor (para no bloquear el TCP)
     private fun drainFrames() {
         receiveJob = lifecycleScope.launch(Dispatchers.IO) {
             val buf = ByteArray(65536)
@@ -296,13 +291,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private fun handleDisconnect() {
         isConnected = false
         isMoving = false
-        hasPrev = false
-        smoothDx = 0f
-        smoothDy = 0f
         accumDx.set(0)
         accumDy.set(0)
+        touchRemDx = 0f
+        touchRemDy = 0f
+        sentText = ""
         mouseSenderJob?.cancel()
-        sensorManager.unregisterListener(this)
         binding.connectionBar.visibility = View.VISIBLE
         binding.connectBtn.isEnabled = true
         binding.connectedLayout.visibility = View.GONE
@@ -322,23 +316,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun sendClick(button: Int) = sendCommand("CLICK $button\n")
-    private fun sendKeyPress(text: String) = sendCommand("KEY $text\n")
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
-
-    override fun onPause() {
-        super.onPause()
-        sensorManager.unregisterListener(this)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (isConnected) {
-            gravitySensor?.let {
-                sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-            }
-        }
-    }
 
     override fun onDestroy() {
         super.onDestroy()

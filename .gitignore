@@ -1,15 +1,31 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# ── Compilación Android ───────────────────────────────────────────────────────
+build/
+app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ── Gradle ────────────────────────────────────────────────────────────────────
+.gradle/
 local.properties
+
+# ── Android Studio / IntelliJ ─────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.externalNativeBuild/
+.cxx/
+.navigation/
+
+# ── Kotlin ────────────────────────────────────────────────────────────────────
+.kotlin/
+
+# ── Servidor C++ ─────────────────────────────────────────────────────────────
+Desktop/screen_server_full
+Desktop/server.log
+
+# ── APK generado en raíz ──────────────────────────────────────────────────────
+MandoDePC.apk

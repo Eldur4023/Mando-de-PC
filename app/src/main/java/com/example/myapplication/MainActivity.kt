@@ -169,17 +169,11 @@ class MainActivity : AppCompatActivity() {
                 touchMoved = false
             }
             MotionEvent.ACTION_MOVE -> {
-                val dx = event.x - lastTouchX
-                val dy = event.y - lastTouchY
-                if (abs(dx) + abs(dy) > TAP_MOVEMENT_THRESHOLD) touchMoved = true
-                if (touchMoved) {
-                    val fx = dx * touchpadSensitivity + touchRemDx
-                    val fy = dy * touchpadSensitivity + touchRemDy
-                    val ix = fx.toInt(); val iy = fy.toInt()
-                    accumDx.addAndGet(ix); accumDy.addAndGet(iy)
-                    touchRemDx = fx - ix;  touchRemDy = fy - iy
+                // Procesar puntos históricos para mayor fluidez
+                for (i in 0 until event.historySize) {
+                    updateMovement(event.getHistoricalX(i), event.getHistoricalY(i))
                 }
-                lastTouchX = event.x; lastTouchY = event.y
+                updateMovement(event.x, event.y)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (!touchMoved) {
@@ -200,6 +194,26 @@ class MainActivity : AppCompatActivity() {
                     tapHandler.postDelayed(action, DOUBLE_TAP_MS)
                 }
             }
+        }
+    }
+
+    private fun updateMovement(newX: Float, newY: Float) {
+        val dx = newX - lastTouchX
+        val dy = newY - lastTouchY
+        lastTouchX = newX
+        lastTouchY = newY
+
+        // Umbral de movimiento más sensible para el inicio (2f en vez de 12f)
+        if (!touchMoved && (abs(dx) > 2f || abs(dy) > 2f)) {
+            touchMoved = true
+        }
+
+        if (touchMoved) {
+            val fx = dx * touchpadSensitivity + touchRemDx
+            val fy = dy * touchpadSensitivity + touchRemDy
+            val ix = fx.toInt(); val iy = fy.toInt()
+            accumDx.addAndGet(ix); accumDy.addAndGet(iy)
+            touchRemDx = fx - ix;  touchRemDy = fy - iy
         }
     }
 

@@ -1,11 +1,10 @@
 # Mando de PC (Remote PC Controller)
 
-Mando de PC es una aplicación de control remoto que permite usar tu dispositivo Android como un ratón, teclado y monitor secundario para tu ordenador. Soporta tanto Linux (X11) como Windows, con conexiones vía WiFi y Bluetooth.
+Mando de PC es una aplicación de control remoto que permite usar tu dispositivo Android como un ratón y teclado para tu ordenador. Soporta tanto Linux (X11) como Windows, con conexiones vía WiFi y Bluetooth.
 
 ## Características
 
 - **Ratón y Teclado**: Controla el cursor con gestos táctiles y escribe en tiempo real.
-- **Streaming de Pantalla**: Visualiza la pantalla de tu PC directamente en el móvil (vía WiFi).
 - **Protocolo de Alta Velocidad**: Implementa un protocolo binario y optimizaciones de hilo de prioridad para una latencia mínima.
 - **Conectividad Dual**: Soporta TCP (WiFi) y RFCOMM (Bluetooth SPP).
 
@@ -19,7 +18,7 @@ Mando de PC es una aplicación de control remoto que permite usar tu dispositivo
 ### Servidor Linux (Ubuntu/Debian)
 1. Instala las dependencias necesarias:
    ```bash
-   sudo apt install libx11-dev libxtst-dev libjpeg-dev libbluetooth-dev g++
+   sudo apt install libx11-dev libxtst-dev libbluetooth-dev g++
    ```
 2. Compila y ejecuta el servidor usando el script incluido:
    ```bash
@@ -30,7 +29,7 @@ Mando de PC es una aplicación de control remoto que permite usar tu dispositivo
 ### Servidor Windows
 1. Asegúrate de tener **Python 3.9+** instalado.
 2. Copia los archivos `server_windows.py` y `run_server_windows.bat` a tu PC.
-3. Ejecuta `run_server_windows.bat`. El script configurará automáticamente un entorno virtual e instalará las dependencias (`mss`, `pynput`, `Pillow`).
+3. Ejecuta `run_server_windows.bat`. El script configurará automáticamente un entorno virtual e instalará las dependencias (`mss`, `pynput`).
 4. Verás tu dirección IP en la consola; úsala para conectar desde la app.
 
 ## Detalles Técnicos y Optimizaciones
@@ -38,7 +37,7 @@ Mando de PC es una aplicación de control remoto que permite usar tu dispositivo
 - **Protocolo Binario**: Los movimientos del ratón se envían en paquetes de 5 bytes (`0x01` + `dx` + `dy`) para minimizar el overhead de red.
 - **Procesamiento Histórico**: La app Android procesa todos los puntos de contacto intermedios de `MotionEvent` para evitar tirones.
 - **Zero-Allocation**: El formateador de paquetes en Android está optimizado para no crear objetos temporales, reduciendo la presión sobre el recolector de basura.
-- **Threading**: El hilo de envío en Android tiene prioridad `URGENT_DISPLAY` para garantizar una respuesta instantánea.
+- **Threading**: El hilo de envío en Android tiene prioridad `URGENT_DISPLAY` para garantizar una respuesta instantánea (en modo WiFi).
 
 ## Licencia
 Este proyecto es de uso libre bajo la licencia MIT.

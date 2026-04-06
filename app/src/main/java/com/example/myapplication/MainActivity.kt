@@ -285,11 +285,11 @@ class MainActivity : AppCompatActivity() {
                 socket = Socket(ip, 5555).also { it.tcpNoDelay = true }
                 inputStream  = DataInputStream(socket!!.getInputStream())
                 outputStream = DataOutputStream(socket!!.getOutputStream())
-                // Handshake: leer dimensiones de pantalla
-                inputStream!!.readInt(); inputStream!!.readInt()
+                // Handshake: leer dimensiones de pantalla (ELIMINADO)
+                // inputStream!!.readInt(); inputStream!!.readInt()
                 withContext(Dispatchers.Main) { onConnected() }
                 startMouseSender()
-                drainFrames()
+                waitForWifiDisconnect()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     binding.connectBtn.isEnabled = true
@@ -503,19 +503,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun drainFrames() {
+    private fun waitForWifiDisconnect() {
         receiveJob = lifecycleScope.launch(Dispatchers.IO) {
-            val buf = ByteArray(65536)
+            val buf = ByteArray(1024)
             try {
                 while (isActive && isConnected) {
-                    val frameSize = Integer.reverseBytes(inputStream!!.readInt())
-                    if (frameSize <= 0 || frameSize > 10_000_000) break
-                    var remaining = frameSize
-                    while (remaining > 0) {
-                        val n = inputStream!!.read(buf, 0, minOf(remaining, buf.size))
-                        if (n < 0) break
-                        remaining -= n
-                    }
+                    if (inputStream!!.read(buf) < 0) break
                 }
             } catch (_: Exception) {}
             withContext(Dispatchers.Main) { handleDisconnect() }

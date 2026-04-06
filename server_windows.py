@@ -1,10 +1,6 @@
 import socket
 import threading
 import struct
-import mss
-import mss.tools
-from PIL import Image
-from io import BytesIO
 import time
 import sys
 
@@ -90,43 +86,7 @@ def process_command(cmd):
     except Exception as e:
         print(f"Error procesando '{cmd}': {e}")
 
-def stream_screen(client_sock):
-    print("Iniciando streaming de pantalla...")
-    with mss.mss() as sct:
-        monitor = sct.monitors[1] # Pantalla principal
-        width = monitor["width"]
-        height = monitor["height"]
-        
-        # Handshake: enviar dimensiones al móvil (Little Endian, 2x Int32)
-        try:
-            client_sock.sendall(struct.pack("<II", width, height))
-        except: return
-
-        while True:
-            try:
-                start_time = time.time()
-                
-                # Captura rápida de pantalla
-                img = sct.grab(monitor)
-                
-                # Comprimir a JPEG (MSS -> PIL -> BytesIO)
-                pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
-                buf = BytesIO()
-                pil_img.save(buf, format="JPEG", quality=QUALITY)
-                jpeg_data = buf.getvalue()
-                
-                # Enviar tamaño (4 bytes) + datos
-                client_sock.sendall(struct.pack("<I", len(jpeg_data)))
-                client_sock.sendall(jpeg_data)
-                
-                # Control de fragmentación/FPS
-                elapsed = time.time() - start_time
-                wait = (1.0 / FPS) - elapsed
-                if wait > 0: time.sleep(wait)
-            except Exception as e:
-                print(f"Error streaming: {e}")
-                break
-    print("Hilo de streaming cerrado")
+# (Streaming de pantalla eliminado)
 
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -147,13 +107,9 @@ def main():
             print(f"Conexión desde {addr}")
             client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             
-            t1 = threading.Thread(target=stream_screen, args=(client,), daemon=True)
-            t2 = threading.Thread(target=handle_client_input, args=(client,), daemon=True)
-            t1.start()
-            t2.start()
+            # Manejar solo entrada (teclado/ratón)
+            handle_client_input(client)
             
-            # Mantener vivo mientras el streaming funcione
-            t1.join()
             client.close()
             print("Cliente desconectado, esperando nuevo...")
     except KeyboardInterrupt:

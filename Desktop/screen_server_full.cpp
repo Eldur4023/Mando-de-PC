@@ -9,7 +9,6 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
-#include <jpeglib.h>
 #include <vector>
 #include <pthread.h>
 
@@ -25,80 +24,7 @@ struct ClientContext {
     int screen_height;
 };
 
-// Capturar pantalla X11
-XImage* capture_screen(Display* display, Window root, int width, int height) {
-    return XGetImage(display, root, 0, 0, width, height, AllPlanes, ZPixmap);
-}
-
-// Comprimir XImage a JPEG en memoria
-std::vector<unsigned char> compress_to_jpeg(XImage* image, int quality) {
-    struct jpeg_compress_struct cinfo;
-    struct jpeg_error_mgr jerr;
-    
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_compress(&cinfo);
-    
-    unsigned char* jpeg_buffer = nullptr;
-    unsigned long jpeg_size = 0;
-    
-    jpeg_mem_dest(&cinfo, &jpeg_buffer, &jpeg_size);
-    
-    cinfo.image_width = image->width;
-    cinfo.image_height = image->height;
-    cinfo.input_components = 3;
-    cinfo.in_color_space = JCS_RGB;
-    
-    jpeg_set_defaults(&cinfo);
-    jpeg_set_quality(&cinfo, quality, TRUE);
-    jpeg_start_compress(&cinfo, TRUE);
-    
-    // Convertir BGRA/RGBA a RGB
-    std::vector<unsigned char> row_buffer(image->width * 3);
-    
-    while (cinfo.next_scanline < cinfo.image_height) {
-        unsigned char* src = (unsigned char*)image->data + 
-                            (cinfo.next_scanline * image->bytes_per_line);
-        
-        for (int x = 0; x < image->width; x++) {
-            // Asumiendo formato BGRA (común en X11)
-            row_buffer[x * 3 + 0] = src[x * 4 + 2]; // R
-            row_buffer[x * 3 + 1] = src[x * 4 + 1]; // G
-            row_buffer[x * 3 + 2] = src[x * 4 + 0]; // B
-        }
-        
-        unsigned char* row_ptr = row_buffer.data();
-        jpeg_write_scanlines(&cinfo, &row_ptr, 1);
-    }
-    
-    jpeg_finish_compress(&cinfo);
-    
-    std::vector<unsigned char> result(jpeg_buffer, jpeg_buffer + jpeg_size);
-    
-    free(jpeg_buffer);
-    jpeg_destroy_compress(&cinfo);
-    
-    return result;
-}
-
-// Enviar frame al cliente
-bool send_frame(int client_sock, const std::vector<unsigned char>& jpeg_data) {
-    // Enviar tamaño del frame (4 bytes)
-    uint32_t size = jpeg_data.size();
-    if (send(client_sock, &size, sizeof(size), 0) != sizeof(size)) {
-        return false;
-    }
-    
-    // Enviar datos JPEG
-    size_t sent = 0;
-    while (sent < jpeg_data.size()) {
-        ssize_t n = send(client_sock, jpeg_data.data() + sent, 
-                        jpeg_data.size() - sent, 0);
-        if (n <= 0) return false;
-        sent += n;
-    }
-    
-    return true;
-}
+// (Captura y compresión eliminados)
 
 // Simular tecla usando XTest (acepta nombre de keysym X11 como "BackSpace", "space", "Return", etc.)
 void simulate_keyname(Display* display, const char* name) {
@@ -193,48 +119,7 @@ void* handle_client_input(void* arg) {
     return nullptr;
 }
 
-// Thread principal de streaming
-void* stream_screen(void* arg) {
-    ClientContext* ctx = (ClientContext*)arg;
-    
-    struct timespec sleep_time;
-    sleep_time.tv_sec = 0;
-    sleep_time.tv_nsec = 1000000000 / FPS;
-    
-    printf("Starting screen streaming at %d FPS...\n", FPS);
-    
-    int frame_count = 0;
-    while (true) {
-        // Capturar pantalla
-        XImage* image = capture_screen(ctx->display, ctx->root, 
-                                       ctx->screen_width, ctx->screen_height);
-        if (!image) {
-            fprintf(stderr, "Failed to capture screen\n");
-            break;
-        }
-        
-        // Comprimir a JPEG
-        std::vector<unsigned char> jpeg_data = compress_to_jpeg(image, QUALITY);
-        XDestroyImage(image);
-        
-        // Enviar al cliente
-        if (!send_frame(ctx->client_sock, jpeg_data)) {
-            fprintf(stderr, "Failed to send frame, client disconnected\n");
-            break;
-        }
-        
-        frame_count++;
-        if (frame_count % 30 == 0) {
-            printf("Frame %d sent: %lu bytes\n", frame_count, jpeg_data.size());
-        }
-        
-        // Control de FPS
-        nanosleep(&sleep_time, nullptr);
-    }
-    
-    close(ctx->client_sock);
-    return nullptr;
-}
+// (Streaming de pantalla eliminado)
 
 // Devuelve true solo si la IP es de red local (RFC 1918) o loopback
 // ── Servidor Bluetooth RFCOMM ────────────────────────────────────────────────
@@ -446,21 +331,14 @@ int main() {
         int nodelay = 1;
         setsockopt(client_sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
-        // Enviar dimensiones de pantalla al cliente
-        uint32_t dims[2] = {(uint32_t)width, (uint32_t)height};
-        send(client_sock, dims, sizeof(dims), 0);
+        // (Handshake de dimensiones eliminado)
         
         // Crear contexto para threads
         ClientContext* ctx = new ClientContext{display, root, client_sock, width, height};
         
-        // Crear threads para streaming y manejo de entrada
-        pthread_t stream_thread, input_thread;
-        pthread_create(&stream_thread, nullptr, stream_screen, ctx);
+        // Manejar solo entrada (teclado/ratón)
+        pthread_t input_thread;
         pthread_create(&input_thread, nullptr, handle_client_input, ctx);
-        
-        // Esperar a que terminen
-        pthread_join(stream_thread, nullptr);
-        pthread_cancel(input_thread);
         pthread_join(input_thread, nullptr);
         
         delete ctx;

@@ -306,7 +306,10 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val adapter = BluetoothAdapter.getDefaultAdapter()
-                adapter?.cancelDiscovery()
+                if (adapter?.isDiscovering == true) adapter.cancelDiscovery()
+                
+                // Espera de estabilización para el stack BT
+                delay(500)
 
                 val connectionMethods = listOf(
                     { // Método 1: Reflection hack (Channel 1)
@@ -327,9 +330,23 @@ class MainActivity : AppCompatActivity() {
                     try {
                         btSocket?.close()
                         btSocket = method()
-                        btSocket?.connect()
                         
-                        // Si llegamos aquí, conectó con éxito
+                        // Reintentar conexión específica
+                        var connected = false
+                        repeat(2) {
+                            try {
+                                if (!connected) {
+                                    btSocket!!.connect()
+                                    connected = true
+                                }
+                            } catch (e: Exception) {
+                                lastError = e
+                                delay(500)
+                            }
+                        }
+                        if (!connected) throw lastError ?: Exception("Failed to connect")
+
+                        // Éxito
                         outputStream = DataOutputStream(btSocket!!.getOutputStream())
                         inputStream  = DataInputStream(btSocket!!.getInputStream())
                         withContext(Dispatchers.Main) { onConnected() }
@@ -338,7 +355,6 @@ class MainActivity : AppCompatActivity() {
                         return@launch
                     } catch (e: Exception) {
                         lastError = e
-                        // Continuar al siguiente método si falla
                     }
                 }
 
@@ -446,8 +462,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMouseSender() {
         mouseSenderJob = lifecycleScope.launch(Dispatchers.IO) {
-            // Prioridad ultra-alta para minimizar micro-stutter
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
+            // Prioridad ultra-alta solo para WiFi (BT es más sensible)
+            if (!isBtMode) {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
+            }
             while (isActive && isConnected) {
                 try {
                     var wrote = false
@@ -459,29 +477,26 @@ class MainActivity : AppCompatActivity() {
                         cmd = commandChannel.tryReceive().getOrNull()
                     }
 
-                    // 2. Movimiento acumulado: Formateo manual sin alocaciones
-                    val dx = accumDx.getAndSet(0)
-                    val dy = accumDy.getAndSet(0)
+                    // 2. Movimiento acumulado: Protocolo Binario (0x01 + dx_be16 + dy_be16)
+                    val dx = accumDx.getAndSet(0).coerceIn(-32768, 32767)
+                    val dy = accumDy.getAndSet(0).coerceIn(-32768, 32767)
                     if (dx != 0 || dy != 0) {
-                        var p = 0
-                        fastBuffer[p++] = 'M'.toByte(); fastBuffer[p++] = 'O'.toByte()
-                        fastBuffer[p++] = 'U'.toByte(); fastBuffer[p++] = 'S'.toByte()
-                        fastBuffer[p++] = 'E'.toByte(); fastBuffer[p++] = ' '.toByte()
-                        p = writeIntToBuffer(dx, fastBuffer, p)
-                        fastBuffer[p++] = ' '.toByte()
-                        p = writeIntToBuffer(dy, fastBuffer, p)
-                        fastBuffer[p++] = '\n'.toByte()
-                        outputStream?.write(fastBuffer, 0, p)
+                        fastBuffer[0] = 0x01.toByte()
+                        fastBuffer[1] = (dx shr 8).toByte()
+                        fastBuffer[2] = (dx and 0xFF).toByte()
+                        fastBuffer[3] = (dy shr 8).toByte()
+                        fastBuffer[4] = (dy and 0xFF).toByte()
+                        outputStream?.write(fastBuffer, 0, 5)
                         wrote = true
                     }
 
                     if (wrote) {
                         outputStream?.flush()
-                        // Latencia mínima agresiva cuando hay actividad
-                        delay(1) 
+                        // Latencia adaptativa: BT requiere más tiempo entre paquetes
+                        if (isBtMode) delay(8) else delay(1)
                     } else {
                         // Reposo para no malgastar batería
-                        delay(10)
+                        delay(12)
                     }
                 } catch (_: Exception) { return@launch }
             }

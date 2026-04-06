@@ -8,13 +8,6 @@ Mando de PC es una aplicación de control remoto que permite usar tu dispositivo
 - **Protocolo de Alta Velocidad**: Implementa un protocolo binario y optimizaciones de hilo de prioridad para una latencia mínima.
 - **Conectividad Dual**: Soporta TCP (WiFi) y RFCOMM (Bluetooth SPP).
 
-## Instalación
-
-### Android
-1. Abre el proyecto en **Android Studio**.
-2. Compila y despliega la app en tu dispositivo Android.
-3. Asegúrate de conceder los permisos de Bluetooth cuando se soliciten.
-
 ### Servidor Linux (Ubuntu/Debian)
 1. Instala las dependencias necesarias:
    ```bash

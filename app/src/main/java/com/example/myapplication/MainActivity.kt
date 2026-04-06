@@ -87,6 +87,20 @@ class MainActivity : AppCompatActivity() {
     // Bluetooth
     private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private var selectedBtDevice: BluetoothDevice? = null
+
+    // Buffer para formateado ultra-rápido (cero alocaciones)
+    private val fastBuffer = ByteArray(64)
+    private fun writeIntToBuffer(value: Int, buffer: ByteArray, offset: Int): Int {
+        var v = value; var off = offset
+        if (v == 0) { buffer[off++] = '0'.toByte(); return off }
+        if (v < 0) { buffer[off++] = '-'.toByte(); v = -v }
+        val start = off
+        while (v > 0) { buffer[off++] = ('0'.toInt() + (v % 10)).toByte(); v /= 10 }
+        var s = start; var e = off - 1
+        while (s < e) { val tmp = buffer[s]; buffer[s] = buffer[e]; buffer[e] = tmp; s++; e-- }
+        return off
+    }
+
     private val btPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -432,27 +446,44 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMouseSender() {
         mouseSenderJob = lifecycleScope.launch(Dispatchers.IO) {
+            // Prioridad ultra-alta para minimizar micro-stutter
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
             while (isActive && isConnected) {
                 try {
                     var wrote = false
-                    // Vaciar comandos pendientes (clicks, teclas, scroll)
+                    // 1. Vaciar comandos especiales (teclado/click)
                     var cmd = commandChannel.tryReceive().getOrNull()
                     while (cmd != null) {
                         outputStream?.writeBytes(cmd)
                         wrote = true
                         cmd = commandChannel.tryReceive().getOrNull()
                     }
-                    // Movimiento del ratón
+
+                    // 2. Movimiento acumulado: Formateo manual sin alocaciones
                     val dx = accumDx.getAndSet(0)
                     val dy = accumDy.getAndSet(0)
                     if (dx != 0 || dy != 0) {
-                        outputStream?.writeBytes("MOUSE $dx $dy\n")
+                        var p = 0
+                        fastBuffer[p++] = 'M'.toByte(); fastBuffer[p++] = 'O'.toByte()
+                        fastBuffer[p++] = 'U'.toByte(); fastBuffer[p++] = 'S'.toByte()
+                        fastBuffer[p++] = 'E'.toByte(); fastBuffer[p++] = ' '.toByte()
+                        p = writeIntToBuffer(dx, fastBuffer, p)
+                        fastBuffer[p++] = ' '.toByte()
+                        p = writeIntToBuffer(dy, fastBuffer, p)
+                        fastBuffer[p++] = '\n'.toByte()
+                        outputStream?.write(fastBuffer, 0, p)
                         wrote = true
                     }
-                    // Un solo flush por frame
-                    if (wrote) outputStream?.flush()
+
+                    if (wrote) {
+                        outputStream?.flush()
+                        // Latencia mínima agresiva cuando hay actividad
+                        delay(1) 
+                    } else {
+                        // Reposo para no malgastar batería
+                        delay(10)
+                    }
                 } catch (_: Exception) { return@launch }
-                delay(8) // ~120 Hz
             }
         }
     }

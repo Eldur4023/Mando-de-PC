@@ -279,26 +279,51 @@ class MainActivity : AppCompatActivity() {
             try {
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                 adapter?.cancelDiscovery()
-                // Reflection bypasa SDP y conecta directo al canal 1 (evita que
-                // bluetoothd intercepte). Fallback a SDP si reflection bloqueado.
-                btSocket = try {
-                    @Suppress("DiscouragedPrivateApi")
-                    val m = device.javaClass.getMethod("createRfcommSocket", Int::class.java)
-                    m.invoke(device, 1) as BluetoothSocket
-                } catch (_: Exception) {
-                    device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+
+                val connectionMethods = listOf(
+                    { // Método 1: Reflection hack (Channel 1)
+                        @Suppress("DiscouragedPrivateApi")
+                        val m = device.javaClass.getMethod("createRfcommSocket", Int::class.java)
+                        m.invoke(device, 1) as BluetoothSocket
+                    },
+                    { // Método 2: Insecure SPP
+                        device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                    },
+                    { // Método 3: Secure SPP
+                        device.createRfcommSocketToServiceRecord(SPP_UUID)
+                    }
+                )
+
+                var lastError: Exception? = null
+                for (method in connectionMethods) {
+                    try {
+                        btSocket?.close()
+                        btSocket = method()
+                        btSocket?.connect()
+                        
+                        // Si llegamos aquí, conectó con éxito
+                        outputStream = DataOutputStream(btSocket!!.getOutputStream())
+                        inputStream  = DataInputStream(btSocket!!.getInputStream())
+                        withContext(Dispatchers.Main) { onConnected() }
+                        startMouseSender()
+                        waitForBtDisconnect()
+                        return@launch
+                    } catch (e: Exception) {
+                        lastError = e
+                        // Continuar al siguiente método si falla
+                    }
                 }
-                btSocket!!.connect()
-                outputStream = DataOutputStream(btSocket!!.getOutputStream())
-                inputStream  = DataInputStream(btSocket!!.getInputStream())
-                // Sin handshake de dimensiones para BT
-                withContext(Dispatchers.Main) { onConnected() }
-                startMouseSender()
-                waitForBtDisconnect()
+
+                // Si fallaron todos los intentos
+                withContext(Dispatchers.Main) {
+                    binding.connectBtn.isEnabled = true
+                    val msg = "Error Bluetooth: ${lastError?.message ?: "Desconocido"}"
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     binding.connectBtn.isEnabled = true
-                    Toast.makeText(this@MainActivity, "Error Bluetooth: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Error fatal: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }

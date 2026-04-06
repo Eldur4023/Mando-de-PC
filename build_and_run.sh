@@ -26,34 +26,54 @@ echo "✔ APK generado: $APK_DST"
 echo ""
 echo "▶ Compilando servidor..."
 cd "$DESKTOP_DIR"
+
+BT_FLAGS=""
+if [ -f /usr/include/bluetooth/bluetooth.h ]; then
+    BT_FLAGS="-DHAVE_BLUETOOTH -lbluetooth"
+    echo "  Bluetooth habilitado"
+else
+    echo "  Bluetooth no disponible (instala: sudo apt install libbluetooth-dev)"
+fi
+
 g++ -std=c++11 -O2 -Wall \
     -o "$SERVER_BIN" \
     "$SERVER_SRC" \
-    -lX11 -lXext -lXtst -ljpeg -lpthread
+    -lX11 -lXext -lXtst -ljpeg -lpthread $BT_FLAGS
 echo "✔ Servidor compilado: $SERVER_BIN"
 
-# ── 3. Lanzar servidor como demonio ───────────────────────────────────────────
+# ── 3. Configurar Bluetooth ───────────────────────────────────────────────────
+if [ -n "$BT_FLAGS" ]; then
+    echo ""
+    echo "▶ Configurando Bluetooth..."
+    bluetoothctl power on 2>/dev/null || true
+    bluetoothctl system-alias "Mando de PC" 2>/dev/null || true
+    bluetoothctl discoverable on 2>/dev/null || true
+    bluetoothctl pairable on 2>/dev/null || true
+    bluetoothctl discoverable-timeout 0 2>/dev/null || true
+    echo "✔ Bluetooth encendido y visible como 'Mando de PC'"
+fi
+
+# ── 4. Lanzar servidor como demonio ───────────────────────────────────────────
 echo ""
 echo "▶ Lanzando servidor..."
 
-# Parar instancia anterior si existe
-if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    systemctl --user restart "$SERVICE_NAME"
-    echo "✔ Servicio systemd reiniciado"
-elif [ -f "$HOME/.config/systemd/user/$SERVICE_NAME.service" ]; then
-    systemctl --user start "$SERVICE_NAME"
-    echo "✔ Servicio systemd iniciado"
-else
-    # Matar instancia anterior si hay
-    pkill -f screen_server_full 2>/dev/null || true
-    sleep 0.5
+# Matar instancia anterior y liberar canal RFCOMM
+pkill -f screen_server_full 2>/dev/null || true
+rfcomm release all 2>/dev/null || true
+sleep 1
 
-    DISPLAY="${DISPLAY:-:0}" \
-    XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
-    nohup "$SERVER_BIN" > "$DESKTOP_DIR/server.log" 2>&1 &
+DISPLAY="${DISPLAY:-:0}" \
+XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" \
+nohup "$SERVER_BIN" > "$DESKTOP_DIR/server.log" 2>&1 &
 
-    echo "✔ Servidor lanzado en segundo plano (PID $!)"
+SERVER_PID=$!
+sleep 1
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "✔ Servidor lanzado (PID $SERVER_PID)"
     echo "  Logs: $DESKTOP_DIR/server.log"
+else
+    echo "✘ Servidor falló al arrancar — ver: $DESKTOP_DIR/server.log"
+    cat "$DESKTOP_DIR/server.log"
 fi
 
 # ── Resumen ───────────────────────────────────────────────────────────────────

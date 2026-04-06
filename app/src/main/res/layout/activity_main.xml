@@ -44,36 +44,96 @@
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp"/>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_horizontal"
-                android:text="Introduce la IP de tu PC"
-                android:textColor="@color/text_secondary"
-                android:textSize="13sp"
-                android:layout_marginBottom="24dp"/>
-
-            <com.google.android.material.textfield.TextInputLayout
+            <!-- Toggle WiFi / Bluetooth -->
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/modeToggleGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="IP del servidor"
-                app:boxCornerRadiusTopStart="12dp"
-                app:boxCornerRadiusTopEnd="12dp"
-                app:boxCornerRadiusBottomStart="12dp"
-                app:boxCornerRadiusBottomEnd="12dp"
-                app:boxStrokeColor="@color/primary"
-                app:hintTextColor="@color/text_secondary"
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="20dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
 
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/ipInput"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/wifiBtnMode"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:text="WiFi"
+                    android:textSize="14sp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:strokeColor="@color/primary"
+                    app:checkedIconTint="@color/on_primary"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btBtnMode"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:text="Bluetooth"
+                    android:textSize="14sp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:strokeColor="@color/primary"
+                    app:checkedIconTint="@color/on_primary"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <!-- Sección WiFi -->
+            <LinearLayout
+                android:id="@+id/wifiSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="192.168.1.100"
-                    android:inputType="text"
-                    android:textColor="@color/text_primary"/>
-            </com.google.android.material.textfield.TextInputLayout>
+                    android:hint="IP del servidor"
+                    app:boxCornerRadiusTopStart="12dp"
+                    app:boxCornerRadiusTopEnd="12dp"
+                    app:boxCornerRadiusBottomStart="12dp"
+                    app:boxCornerRadiusBottomEnd="12dp"
+                    app:boxStrokeColor="@color/primary"
+                    app:hintTextColor="@color/text_secondary"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_marginBottom="16dp">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/ipInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="192.168.1.100"
+                        android:inputType="text"
+                        android:textColor="@color/text_primary"/>
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- Sección Bluetooth -->
+            <LinearLayout
+                android:id="@+id/btSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/btDeviceName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Ningún dispositivo seleccionado"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:gravity="center"
+                    android:layout_marginBottom="10dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btPickBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:text="Seleccionar dispositivo"
+                    android:textSize="14sp"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    app:strokeColor="@color/primary"
+                    android:layout_marginBottom="16dp"/>
+            </LinearLayout>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/connectBtn"
@@ -93,7 +153,6 @@
         android:layout_height="0dp"
         android:orientation="vertical"
         android:visibility="gone"
-        android:gravity="center_horizontal"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -106,7 +165,7 @@
             android:orientation="horizontal"
             android:gravity="end"
             android:paddingEnd="8dp"
-            android:paddingTop="8dp">
+            android:paddingTop="4dp">
 
             <ImageButton
                 android:id="@+id/settingsBtn"
@@ -118,39 +177,17 @@
                 android:contentDescription="Configuración"/>
         </LinearLayout>
 
-        <!-- Zona táctil superior (tap / doble tap para clicks) -->
+        <!-- Zona squircle: cubre todo el espacio libre -->
         <View
-            android:id="@+id/touchArea"
+            android:id="@+id/moverZone"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"/>
-
-        <!-- Botón MOVER circular -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/calibrateBtn"
-            android:layout_width="200dp"
-            android:layout_height="200dp"
-            android:text="MOVER"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            app:backgroundTint="@color/primary"
-            app:cornerRadius="100dp"/>
-
-        <!-- Instrucción -->
-        <TextView
-            android:id="@+id/instructionText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Mantén pulsado y desliza para mover"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginTop="12dp"/>
-
-        <!-- Spacer -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"/>
+            android:layout_weight="1"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/squircle_border"/>
 
         <!-- Teclado en tiempo real -->
         <com.google.android.material.textfield.TextInputLayout
@@ -167,7 +204,7 @@
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
-            android:layout_marginBottom="28dp">
+            android:layout_marginBottom="20dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/keyboardInput"
